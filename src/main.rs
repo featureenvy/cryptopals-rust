@@ -1,4 +1,7 @@
-use std::{fmt, convert};
+use std::fmt;
+
+mod bytes;
+use bytes::Bytes;
 
 pub struct Hex(String);
 
@@ -13,37 +16,6 @@ impl fmt::Display for Hex {
 
 pub struct Base64(String);
 
-pub struct Bytes(Vec<u8>);
-
-impl Bytes {
-    fn len(&self) -> usize {
-        let &Bytes(ref value) = self;
-
-        value.len()
-    }
-}
-
-impl<'a> convert::From<&'a Hex> for Bytes {
-    fn from(hex: &Hex) -> Bytes {
-        let &Hex(ref raw_input) = hex;
-        let mut input_iter = raw_input.chars().map(::hex_to_byte);
-        let mut res = Vec::new();
-
-        while let (Some(first), Some(second)) = (input_iter.next(), input_iter.next()) {
-            res.push(first << 4 | second);
-        }
-
-        Bytes(res)
-    }
-}
-
-impl fmt::Display for Bytes {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let &Bytes(ref value) = self;
-
-        write!(f, "Bytes({:?})", value)
-    }
-}
 
 fn hex_to_byte(hex: char) -> u8 {
     match hex {
@@ -54,7 +26,7 @@ fn hex_to_byte(hex: char) -> u8 {
     }
 }
 
-fn byte_to_hex(input: &u8) -> (char, char) {
+fn byte_to_hex(input: u8) -> (char, char) {
     let to_char = |byte| match byte {
         i @ 0...9 => '0' as u8 + i,
         i @ _ => 'A' as u8 + (i - 10)
@@ -67,10 +39,9 @@ fn byte_to_hex(input: &u8) -> (char, char) {
 }
 
 pub fn bytes_to_hex(bytes: &Bytes) -> Hex {
-    let &Bytes(ref raw_bytes) = bytes;
     let mut res = String::new();
 
-    for (first, second) in raw_bytes.into_iter().map(byte_to_hex) {
+    for (first, second) in bytes.iter().map(|c: &u8| byte_to_hex(*c)) {
         res.push(first);
         res.push(second);
     }
@@ -82,8 +53,7 @@ pub fn bytes_to_base64(input: &Bytes) -> Base64 {
     let base64_map = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let to_base64_char = |num, pos| base64_map.chars().nth((num >> pos & 63) as usize).unwrap() as char;
 
-    let &Bytes(ref raw_input) = input;
-    let mut input_iter = raw_input.iter().map(|&x| x as u32);
+    let mut input_iter = input.iter().map(|x| *x as u32);
     let mut res = String::new();
 
     while let (Some(first), Some(second), Some(third)) = (input_iter.next(), input_iter.next(), input_iter.next()) {
@@ -108,13 +78,11 @@ pub fn hex_to_base64(input: &Hex) -> Base64 {
 }
 
 pub fn xor(input: &Bytes, key: &Bytes) -> Bytes {
-    let &Bytes(ref raw_input) = input;
-    let &Bytes(ref raw_key) = key;
-    let res: Vec<u8> = raw_input.into_iter().zip(raw_key)
+    let res: Vec<u8> = input.iter().zip(key.iter())
         .map(|(i, k)| i ^ k)
         .collect();
 
-    Bytes(res)
+    Bytes{value: res}
 }
 
 pub fn xor_to_hex(input: &Hex, key: &Hex) -> Hex {
@@ -127,11 +95,10 @@ pub fn xor_to_hex(input: &Hex, key: &Hex) -> Hex {
 
 pub fn single_byte_xor(key: char) -> String {
     let input = Bytes::from(&Hex("1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736".to_string()));
-    let key = Bytes(vec![key as u8; input.len()]);
+    let key = Bytes{value: vec![key as u8; input.len()]};
     let result = xor(&input, &key);
-    let Bytes(raw_result) = result;
 
-    String::from_utf8(raw_result).unwrap_or("No valid value found.".to_string())
+    String::from_utf8(result.value).unwrap_or("No valid value found.".to_string())
 }
 
 pub fn main() {
@@ -146,6 +113,7 @@ pub fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
 
     #[test]
     fn transforms_from_hex_to_base64() {
@@ -159,7 +127,7 @@ mod tests {
     fn transforms_hex_to_bytes() {
         let expected = [192, 254, 186, 190, 19, 55];
 
-        let Bytes(actual) = Bytes::from(&Hex("C0FEBabe1337".to_string()));
+        let actual = Bytes::from(&Hex("C0FEBabe1337".to_string()));
 
         assert_eq!(expected, &actual[..]);
     }
@@ -168,7 +136,7 @@ mod tests {
     fn transforms_bytes_to_hex() {
         let expected = "C0FEBABE1337";
 
-        let Hex(actual) = bytes_to_hex(&Bytes(vec![192 as u8, 254, 186, 190, 19, 55]));
+        let Hex(actual) = bytes_to_hex(&Bytes{value: vec![192 as u8, 254, 186, 190, 19, 55]});
 
         assert_eq!(expected, actual);
     }
@@ -177,7 +145,7 @@ mod tests {
     fn transforms_bytes_to_base64() {
         let expected = "SSdt";
 
-        let Base64(actual) = bytes_to_base64(&Bytes(vec![73, 39, 109]));
+        let Base64(actual) = bytes_to_base64(&Bytes{value: vec![73, 39, 109]});
 
         assert_eq!(actual, expected);
     }

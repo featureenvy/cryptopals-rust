@@ -1,4 +1,9 @@
+extern crate regex;
+
 use std::fmt;
+use std::collections::HashMap;
+
+use regex::Regex;
 
 mod bytes;
 use bytes::Bytes;
@@ -93,21 +98,37 @@ pub fn xor_to_hex(input: &Hex, key: &Hex) -> Hex {
     return bytes_to_hex(&res);
 }
 
-pub fn single_byte_xor(key: char) -> String {
-    let input = Bytes::from(&Hex("1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736".to_string()));
+pub fn single_byte_xor(input: &Bytes, key: char) -> String {
     let key = Bytes{value: vec![key as u8; input.len()]};
     let result = xor(&input, &key);
 
-    String::from_utf8(result.value).unwrap_or("No valid value found.".to_string())
+    String::from_utf8(result.value).unwrap_or("No valid value fond.".to_string())
+}
+
+fn count_letters(value: &str) -> usize {
+    value.chars().filter(|c| c.is_alphabetic())
+        .count()
+}
+
+pub fn crack_single_byte_xor(input: Bytes) -> String {
+    let ascii_checker = Regex::new(r"^[:print:]*$").unwrap(); // unwrap because otherwise it is a bug!
+
+    let possible_values: HashMap<u32, String> = (b'A'..b'Z'+1).chain(b'a'..b'z'+1)
+        .map(|key| single_byte_xor(&input, key as char))
+        .filter(|decrypt| ascii_checker.is_match(decrypt))
+        .fold(HashMap::new(), |mut map, decrypt| { map.insert((count_letters(&decrypt) as f32 / decrypt.len() as f32 * 100 as f32) as u32, decrypt.clone()); map });
+
+    let max = possible_values.keys().max().expect("No value found.");
+    possible_values.get(max).expect("WAT???").clone()
 }
 
 pub fn main() {
-    for key in b'A'..b'Z'+1 {
-        println!("{}: {}", key as char, single_byte_xor(key as char));
-    }
-    for key in b'a'..b'z'+1 {
-        println!("{}: {}", key as char, single_byte_xor(key as char));
-    }
+    // for key in b'A'..b'Z'+1 {
+    //     println!("{}: {}", key as char, single_byte_xor(key as char));
+    // }
+    // for key in b'a'..b'z'+1 {
+    //     println!("{}: {}", key as char, single_byte_xor(key as char));
+    // }
 }
 
 #[cfg(test)]
@@ -155,7 +176,14 @@ mod tests {
         let expected = "746865206B696420646F6E277420706C6179";
 
         let Hex(actual) = xor_to_hex(&Hex("1c0111001f010100061a024b53535009181c".to_string()), &Hex("686974207468652062756c6c277320657965".to_string()));
-
+ 
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    pub fn test_crack_single_byte_xor() {
+        let input = Bytes::from(&Hex("1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736".to_string()));
+
+        assert_eq!("Cooking MC's like a pound of bacon", crack_single_byte_xor(input));
     }
 }
